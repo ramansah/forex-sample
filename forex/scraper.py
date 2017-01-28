@@ -1,13 +1,20 @@
 import scrapy
 from scrapy.crawler import CrawlerProcess
+from forex.config import SITE
+from forex.db import Forex
+from forex.db import load_data
+import time
 
 
 class ForexScraper(scrapy.Spider):
 
     name = 'forex'
+    data = None
+    time = None
 
     def start_requests(self):
-        yield scrapy.Request(url='http://www.xe.com', callback=self.parse)
+        self.time = int(time.time() * 1000)
+        yield scrapy.Request(url=SITE, callback=self.parse)
 
     def parse(self, response):
         currency_list = response.selector.xpath("//table[@id='xRatesBxTable']").xpath('tr/th/a/text()').extract()[1:]
@@ -17,10 +24,23 @@ class ForexScraper(scrapy.Spider):
             entry = cell.xpath('a/text()')
             if len(entry) == 0:
                 entry = cell.xpath('div/text()')
-            rate = entry.extract()[0]
+            rate = float(entry.extract()[0])
             rate_list.append(rate)
         data = dict(zip(currency_list, rate_list))
         print(data)
+        self.data = data
+        self.load_in_db()
+
+    def load_in_db(self):
+        data_to_load = list()
+        for key, value in self.data.items():
+            forex = Forex(
+                currency=key,
+                rate=value,
+                time=self.time
+            )
+            data_to_load.append(forex)
+        load_data(data_to_load)
 
 
 def run_spider():
@@ -30,4 +50,6 @@ def run_spider():
     process.crawl(ForexScraper)
     process.start()
 
-run_spider()
+
+if __name__ == '__main__':
+    run_spider()
